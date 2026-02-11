@@ -1,0 +1,33 @@
+investment_keyword: "bert"
+poll_interval_seconds: 30
+
+imap:
+  host: "imap.example.com"
+  port: 993
+  username: "alerts@example.com"
+  password: "change-me"
+  folder: "INBOX"
+
+onedrive:
+  access_token: "YOUR_MICROSOFT_GRAPH_ACCESS_TOKEN"
+  drive_id: "YOUR_DRIVE_ID"
+  folder_path: "InvestmentResearch/Bert"
+  max_files: 25
+
+openai:
+  api_key: "YOUR_OPENAI_API_KEY"
+  model: "gpt-4.1"
+
+smtp:
+  host: "smtp.example.com"
+  port: 587
+  username: "alerts@example.com"
+  password: "change-me"
+  from_email: "alerts@example.com"
+  subject_prefix: "[Investment Alert]"
+
+recipients:
+  - name: "Alice Analyst"
+    email: "alice@example.com"
+  - name: "Bob PM"
+    email: "bob@example.com"
