@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import threading
 import time
 
 from .config import load_config
@@ -18,10 +19,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
-    args = parse_args()
-    config = load_config(args.config)
+def run_monitor(config_path: str, stop_event: threading.Event | None = None) -> None:
+    if not logging.getLogger().hasHandlers():
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+    config = load_config(config_path)
 
     monitor = EmailMonitor(config.imap)
     workflow = InvestmentWorkflow(
@@ -33,10 +35,27 @@ def main() -> None:
     logging.info("Starting monitor for keyword '%s'", config.investment_keyword)
 
     while True:
+        if stop_event and stop_event.is_set():
+            logging.info("Stopping monitor...")
+            break
+
         try:
             unseen = monitor.fetch_unseen()
             logging.info("Fetched %d unseen email(s)", len(unseen))
-            for incoming in unseen:
+        except Exception:
+            logging.exception("Error fetching emails")
+            if stop_event:
+                if stop_event.wait(config.poll_interval_seconds):
+                    break
+            else:
+                time.sleep(config.poll_interval_seconds)
+            continue
+
+        for incoming in unseen:
+            if stop_event and stop_event.is_set():
+                break
+
+            try:
                 if monitor.has_keyword(incoming, config.investment_keyword):
                     logging.info("Keyword '%s' detected in UID %s", config.investment_keyword, incoming.uid)
                     output = workflow.run(config.investment_keyword, incoming)
@@ -47,10 +66,22 @@ def main() -> None:
                         graph_path=output.graph_path,
                     )
                     logging.info("Notification sent for UID %s", incoming.uid)
-        except Exception:
-            logging.exception("Error during polling cycle")
 
-        time.sleep(config.poll_interval_seconds)
+                monitor.mark_as_read(incoming.uid)
+            except Exception:
+                logging.exception("Error processing email UID %s", incoming.uid)
+
+        if stop_event:
+            if stop_event.wait(config.poll_interval_seconds):
+                logging.info("Stopping monitor during sleep...")
+                break
+        else:
+            time.sleep(config.poll_interval_seconds)
+
+
+def main() -> None:
+    args = parse_args()
+    run_monitor(args.config)
 
 
 if __name__ == "__main__":

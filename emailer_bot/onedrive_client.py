@@ -35,6 +35,9 @@ class OneDriveClient:
             if "file" not in item:
                 continue
             name = item.get("name", "unknown")
+            if not any(name.lower().endswith(ext) for ext in [".txt", ".md", ".json", ".csv"]):
+                continue
+
             download_url = item.get("@microsoft.graph.downloadUrl")
             if not download_url:
                 continue

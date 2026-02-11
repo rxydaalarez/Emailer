@@ -33,13 +33,19 @@ class EmailMonitor:
                 return mails
 
             for uid in data[0].decode().split():
-                f_status, raw = client.uid("fetch", uid, "(RFC822)")
+                f_status, raw = client.uid("fetch", uid, "(BODY.PEEK[])")
                 if f_status != "OK" or not raw or not raw[0]:
                     continue
                 msg = email.message_from_bytes(raw[0][1])
                 mails.append(self._parse_message(uid, msg))
 
         return mails
+
+    def mark_as_read(self, uid: str) -> None:
+        with imaplib.IMAP4_SSL(self.config.host, self.config.port) as client:
+            client.login(self.config.username, self.config.password)
+            client.select(self.config.folder)
+            client.uid("store", uid, "+FLAGS", "\\Seen")
 
     def has_keyword(self, email_item: IncomingEmail, keyword: str) -> bool:
         pattern = rf"\b{re.escape(keyword)}\b"
