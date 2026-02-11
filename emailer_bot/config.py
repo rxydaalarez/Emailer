@@ -13,6 +13,7 @@ class IMAPConfig:
     username: str
     password: str
     folder: str = "INBOX"
+    auth_method: str = "password"
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class OneDriveConfig:
     drive_id: str
     folder_path: str
     max_files: int = 25
+    auth_method: str = "password"
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,7 @@ class SMTPConfig:
     password: str
     from_email: str
     subject_prefix: str = "[Investment Alert]"
+    auth_method: str = "password"
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,8 @@ class AppConfig:
     openai: OpenAIConfig
     smtp: SMTPConfig
     recipients: List[Recipient]
+    client_id: str | None = None
+    refresh_token: str | None = None
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -71,4 +76,6 @@ def load_config(path: str | Path) -> AppConfig:
         openai=OpenAIConfig(**raw["openai"]),
         smtp=SMTPConfig(**raw["smtp"]),
         recipients=recipients,
+        client_id=raw.get("client_id"),
+        refresh_token=raw.get("refresh_token"),
     )

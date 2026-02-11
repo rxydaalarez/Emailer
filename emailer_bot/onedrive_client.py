@@ -18,11 +18,15 @@ class ResearchFile:
 class OneDriveClient:
     def __init__(self, config: OneDriveConfig):
         self.config = config
+        self.access_token = config.access_token
+
+    def update_token(self, token: str) -> None:
+        self.access_token = token
 
     def fetch_research_files(self) -> List[ResearchFile]:
         import requests
 
-        headers = {"Authorization": f"Bearer {self.config.access_token}"}
+        headers = {"Authorization": f"Bearer {self.access_token}"}
         folder_url = (
             f"{GRAPH_ROOT}/drives/{self.config.drive_id}/root:/{self.config.folder_path}:/children"
         )

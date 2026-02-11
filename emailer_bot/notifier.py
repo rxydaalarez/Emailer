@@ -5,12 +5,17 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Iterable
 
+from .auth import generate_oauth2_string
 from .config import Recipient, SMTPConfig
 
 
 class Notifier:
     def __init__(self, config: SMTPConfig):
         self.config = config
+        self.access_token = config.password if getattr(config, "auth_method", "password") == "oauth" else None
+
+    def update_token(self, token: str) -> None:
+        self.access_token = token
 
     def send(
         self,
@@ -37,5 +42,10 @@ class Notifier:
 
         with smtplib.SMTP(self.config.host, self.config.port) as server:
             server.starttls()
-            server.login(self.config.username, self.config.password)
+            if getattr(self.config, "auth_method", "password") == "oauth":
+                token = self.access_token or self.config.password
+                auth_str = generate_oauth2_string(self.config.username, token)
+                server.auth("XOAUTH2", lambda x: auth_str)
+            else:
+                server.login(self.config.username, self.config.password)
             server.send_message(msg)

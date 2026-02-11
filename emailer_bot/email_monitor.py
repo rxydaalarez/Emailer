@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from email.message import Message
 from typing import Iterable, List
 
+from .auth import generate_oauth2_string
 from .config import IMAPConfig
 
 
@@ -21,11 +22,21 @@ class IncomingEmail:
 class EmailMonitor:
     def __init__(self, config: IMAPConfig):
         self.config = config
+        self.access_token = config.password if getattr(config, "auth_method", "password") == "oauth" else None
+
+    def update_token(self, token: str) -> None:
+        self.access_token = token
 
     def fetch_unseen(self) -> List[IncomingEmail]:
         mails: list[IncomingEmail] = []
         with imaplib.IMAP4_SSL(self.config.host, self.config.port) as client:
-            client.login(self.config.username, self.config.password)
+            if getattr(self.config, "auth_method", "password") == "oauth":
+                # Use current access_token
+                token = self.access_token or self.config.password
+                auth_str = generate_oauth2_string(self.config.username, token)
+                client.authenticate("XOAUTH2", lambda x: auth_str)
+            else:
+                client.login(self.config.username, self.config.password)
             client.select(self.config.folder)
 
             status, data = client.uid("search", None, "UNSEEN")
@@ -43,7 +54,12 @@ class EmailMonitor:
 
     def mark_as_read(self, uid: str) -> None:
         with imaplib.IMAP4_SSL(self.config.host, self.config.port) as client:
-            client.login(self.config.username, self.config.password)
+            if getattr(self.config, "auth_method", "password") == "oauth":
+                token = self.access_token or self.config.password
+                auth_str = generate_oauth2_string(self.config.username, token)
+                client.authenticate("XOAUTH2", lambda x: auth_str)
+            else:
+                client.login(self.config.username, self.config.password)
             client.select(self.config.folder)
             client.uid("store", uid, "+FLAGS", "\\Seen")
 

@@ -5,6 +5,8 @@ from tkinter import ttk, scrolledtext, messagebox
 import yaml
 from pathlib import Path
 from emailer_bot.main import run_monitor
+from emailer_bot.auth import MicrosoftAuth
+import requests
 
 CONFIG_PATH = Path("config.yaml")
 EXAMPLE_CONFIG_PATH = Path("config.example.yaml")
@@ -94,8 +96,91 @@ class EmailerBotGUI:
 
     def create_general_tab(self):
         tab = self.create_tab("General")
+
+        # Auth Section
+        auth_frame = ttk.LabelFrame(tab, text="Authentication", padding="5")
+        auth_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Button(auth_frame, text="Sign in with Microsoft", command=self.sign_in_microsoft).pack(fill=tk.X, pady=2)
+        self.add_field(auth_frame, "Client ID (Optional)", ["client_id"])
+
+        # General Config
         self.add_field(tab, "Investment Keyword", ["investment_keyword"])
         self.add_field(tab, "Poll Interval (sec)", ["poll_interval_seconds"])
+
+    def sign_in_microsoft(self):
+        try:
+            client_id = self.get_nested_value(self.config_data, ["client_id"])
+            # Treat empty string as None to use default
+            if not client_id:
+                client_id = None
+
+            auth = MicrosoftAuth(client_id=client_id)
+            result = auth.login()
+
+            if not result or "access_token" not in result:
+                messagebox.showerror("Auth Error", "Failed to acquire token.")
+                return
+
+            access_token = result["access_token"]
+            refresh_token = result.get("refresh_token")
+            # Extract email from ID token if available, or fetch profile
+            user_email = result.get("id_token_claims", {}).get("preferred_username")
+
+            if not user_email:
+                # Fallback: fetch profile
+                try:
+                    profile = requests.get(
+                        "https://graph.microsoft.com/v1.0/me",
+                        headers={"Authorization": f"Bearer {access_token}"}
+                    ).json()
+                    user_email = profile.get("userPrincipalName") or profile.get("mail")
+                except Exception as e:
+                    logging.error(f"Failed to fetch profile: {e}")
+
+            # Fetch Drive ID
+            try:
+                drive_info = requests.get(
+                    "https://graph.microsoft.com/v1.0/me/drive",
+                    headers={"Authorization": f"Bearer {access_token}"}
+                ).json()
+                drive_id = drive_info.get("id")
+            except Exception as e:
+                logging.error(f"Failed to fetch drive info: {e}")
+                drive_id = ""
+
+            # Update Config Data
+            self.config_data["refresh_token"] = refresh_token
+
+            # Update IMAP
+            self.set_nested_value(self.config_data, ["imap", "host"], "outlook.office365.com")
+            self.set_nested_value(self.config_data, ["imap", "port"], 993)
+            self.set_nested_value(self.config_data, ["imap", "username"], user_email)
+            self.set_nested_value(self.config_data, ["imap", "password"], access_token)
+            self.set_nested_value(self.config_data, ["imap", "auth_method"], "oauth")
+
+            # Update SMTP
+            self.set_nested_value(self.config_data, ["smtp", "host"], "smtp.office365.com")
+            self.set_nested_value(self.config_data, ["smtp", "port"], 587)
+            self.set_nested_value(self.config_data, ["smtp", "username"], user_email)
+            self.set_nested_value(self.config_data, ["smtp", "password"], access_token)
+            self.set_nested_value(self.config_data, ["smtp", "from_email"], user_email)
+            self.set_nested_value(self.config_data, ["smtp", "auth_method"], "oauth")
+
+            # Update OneDrive
+            self.set_nested_value(self.config_data, ["onedrive", "access_token"], access_token)
+            if drive_id:
+                self.set_nested_value(self.config_data, ["onedrive", "drive_id"], drive_id)
+            self.set_nested_value(self.config_data, ["onedrive", "auth_method"], "oauth")
+
+            # Refresh UI
+            self.load_config_into_ui()
+
+            messagebox.showinfo("Success", f"Signed in as {user_email}")
+
+        except Exception as e:
+            logging.error(f"Sign in failed: {e}")
+            messagebox.showerror("Error", f"Sign in failed: {e}")
 
     def create_imap_tab(self):
         tab = self.create_tab("IMAP")
@@ -160,6 +245,9 @@ class EmailerBotGUI:
             messagebox.showerror("Error", f"Failed to load config: {e}")
             return
 
+        self.load_config_into_ui()
+
+    def load_config_into_ui(self):
         # Populate fields
         for entry, key_path in self.fields:
             val = self.get_nested_value(self.config_data, key_path)
@@ -168,9 +256,10 @@ class EmailerBotGUI:
 
         # Populate recipients
         recipients = self.config_data.get("recipients", [])
-        self.recipients_text.delete('1.0', tk.END)
-        # Using safe_dump to ensure it's readable
-        self.recipients_text.insert('1.0', yaml.safe_dump(recipients, default_flow_style=False))
+        if hasattr(self, 'recipients_text'):
+            self.recipients_text.delete('1.0', tk.END)
+            # Using safe_dump to ensure it's readable
+            self.recipients_text.insert('1.0', yaml.safe_dump(recipients, default_flow_style=False))
 
     def save_config(self):
         # Update config_data from UI
