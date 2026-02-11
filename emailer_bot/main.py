@@ -36,7 +36,13 @@ def main() -> None:
         try:
             unseen = monitor.fetch_unseen()
             logging.info("Fetched %d unseen email(s)", len(unseen))
-            for incoming in unseen:
+        except Exception:
+            logging.exception("Error fetching emails")
+            time.sleep(config.poll_interval_seconds)
+            continue
+
+        for incoming in unseen:
+            try:
                 if monitor.has_keyword(incoming, config.investment_keyword):
                     logging.info("Keyword '%s' detected in UID %s", config.investment_keyword, incoming.uid)
                     output = workflow.run(config.investment_keyword, incoming)
@@ -47,8 +53,10 @@ def main() -> None:
                         graph_path=output.graph_path,
                     )
                     logging.info("Notification sent for UID %s", incoming.uid)
-        except Exception:
-            logging.exception("Error during polling cycle")
+
+                monitor.mark_as_read(incoming.uid)
+            except Exception:
+                logging.exception("Error processing email UID %s", incoming.uid)
 
         time.sleep(config.poll_interval_seconds)
 

@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import List, Tuple
 
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
 from .email_monitor import IncomingEmail
 from .llm_client import LLMClient
 from .onedrive_client import OneDriveClient, ResearchFile
@@ -57,18 +61,18 @@ class InvestmentWorkflow:
         output_dir.mkdir(parents=True, exist_ok=True)
         output = output_dir / f"{keyword}_trend.png"
 
-        import matplotlib.pyplot as plt
-
         dates, scores = zip(*points)
-        plt.figure(figsize=(8, 4))
-        plt.plot(dates, scores, marker="o")
-        plt.title(f"{keyword} historical opinion trend")
-        plt.xlabel("Date")
-        plt.ylabel("Score")
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(output)
-        plt.close()
+        fig, ax = plt.subplots(figsize=(8, 4))
+        try:
+            ax.plot(dates, scores, marker="o")
+            ax.set_title(f"{keyword} historical opinion trend")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Score")
+            ax.grid(True, alpha=0.3)
+            fig.tight_layout()
+            fig.savefig(output)
+        finally:
+            plt.close(fig)
 
         return output
 
