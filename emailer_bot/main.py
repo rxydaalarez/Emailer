@@ -5,6 +5,7 @@ import logging
 import threading
 import time
 
+from .auth import MicrosoftAuth
 from .config import load_config
 from .email_monitor import EmailMonitor
 from .llm_client import LLMClient
@@ -26,15 +27,50 @@ def run_monitor(config_path: str, stop_event: threading.Event | None = None) -> 
     config = load_config(config_path)
 
     monitor = EmailMonitor(config.imap)
+    onedrive_client = OneDriveClient(config.onedrive)
     workflow = InvestmentWorkflow(
-        onedrive=OneDriveClient(config.onedrive),
+        onedrive=onedrive_client,
         llm=LLMClient(config.openai),
     )
     notifier = Notifier(config.smtp)
 
+    # Auth setup
+    auth_client = None
+    current_refresh_token = config.refresh_token
+    last_refresh_time = 0
+
+    if getattr(config.imap, "auth_method", "password") == "oauth" or getattr(config.onedrive, "auth_method", "password") == "oauth":
+        try:
+            auth_client = MicrosoftAuth(client_id=config.client_id)
+        except Exception as e:
+            logging.error(f"Failed to init auth client: {e}")
+
     logging.info("Starting monitor for keyword '%s'", config.investment_keyword)
 
     while True:
+        # Token Refresh Logic
+        if auth_client and current_refresh_token:
+            # Refresh if > 45 mins since last refresh (token usually valid for 60m)
+            # or if it's the first iteration (last_refresh_time=0) to ensure freshness
+            if time.time() - last_refresh_time > 2700:
+                try:
+                    logging.info("Refreshing access token...")
+                    result = auth_client.refresh_access_token(current_refresh_token)
+                    new_token = result.get("access_token")
+                    new_refresh = result.get("refresh_token")
+
+                    if new_token:
+                        monitor.update_token(new_token)
+                        notifier.update_token(new_token)
+                        onedrive_client.update_token(new_token)
+                        last_refresh_time = time.time()
+                        logging.info("Token refreshed successfully.")
+
+                    if new_refresh:
+                        current_refresh_token = new_refresh
+                except Exception as e:
+                    logging.error(f"Token refresh failed: {e}")
+
         if stop_event and stop_event.is_set():
             logging.info("Stopping monitor...")
             break
